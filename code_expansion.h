@@ -9,11 +9,11 @@
 
 // Function declarations
 void type_prompt();
-void read_command(char **command, char *parameters[], char *buffer);
-void redirect_input_output(char *command);
+void read_command(char **command, char *parameters[], char *buffer, char **redirect_filename, int *redirect_value);
+void redirect_input_output(int redirect_value, char *redirect_filename); 
 void handle_pipe(char *command);
-int is_background_job(char *command);
-int is_redirection(char *command);
-int is_pipe(char *command);
+int is_background_job(char *token);
+int is_redirection(char *token);
+int is_pipe(char *token);
 
 #endif // CODE_EXPANSION_H

@@ -5,6 +5,8 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h> 
 
 #define TRUE 1
 #define MAX_LENGTH 1024
@@ -14,8 +16,16 @@ int is_background_job(char *command){
     return 0;
 }
 
-int is_redirection(char *command){
-    return 0;
+int is_redirection(char *token){
+    int is_redirect_char = -1;
+    if(strcmp(token, ">") == 0){
+        is_redirect_char = 0;
+    }else if(strcmp(token, "<") == 0){
+        is_redirect_char = 1;
+    }else if (strcmp(token, ">>") == 0){
+        is_redirect_char = 2;
+    }
+    return is_redirect_char;
 }
 
 int is_pipe(char *command){
@@ -27,7 +37,7 @@ void type_prompt()
     printf("nicholas_shell> ");
 }
 
-void read_command(char **command, char *parameters[], char *buffer)
+void read_command(char **command, char *parameters[], char *buffer, char **redirect_filename, int *redirect_value)
 {
     char *line = fgets(buffer, MAX_LENGTH, stdin);
     if (line == NULL)
@@ -49,7 +59,14 @@ void read_command(char **command, char *parameters[], char *buffer)
     int i = 0;
     while (token != NULL)
     {
-        parameters[i++] = token;
+
+        if(is_redirection(token) == -1){
+            parameters[i++] = token;
+        }else{
+            *redirect_value = is_redirection(token);
+            token = strtok(NULL, " ");
+            *redirect_filename = token;
+        }
         token = strtok(NULL, " ");
         if (i >= MAX_LENGTH - 1)
             break;
@@ -57,10 +74,40 @@ void read_command(char **command, char *parameters[], char *buffer)
     parameters[i] = NULL; // NULL terminate the parameters array
 }
 
-void redirect_input_output(char *command)
+void redirect_input_output(int redirect_value, char *redirect_filename)
 {
-    // Implementation for input and output redirection
-
+    if (redirect_value == 0)
+    { // output
+        int fd_out = open(redirect_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd_out == -1)
+        {
+            perror("open for output redirection");
+            exit(EXIT_FAILURE);
+        }
+        dup2(fd_out, STDOUT_FILENO); // duplicates one file descriptor, making it a copy of another file descriptor. This allows us to redirect
+        close(fd_out);
+    }
+    else if (redirect_value == 1)
+    { //input
+        int fd_in = open(redirect_filename, O_RDONLY);
+        if (fd_in == -1)
+        {
+            perror("open for input redirection");
+            exit(EXIT_FAILURE);
+        }
+        dup2(fd_in, STDIN_FILENO);
+        close(fd_in);
+    }else if(redirect_value == 2)
+    { //append
+        int fd_append = open(redirect_filename, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd_append == -1)
+        {
+            perror("open for append redirection");
+            exit(EXIT_FAILURE);
+        }
+        dup2(fd_append, STDOUT_FILENO); // Redirect stdout to fd_append
+        close(fd_append);
+    }
 }
 
 void handle_pipe(char *command)
@@ -78,8 +125,11 @@ int main()
 
     while (TRUE)
     {
+        char *redirect_filename;
+        int redirect_value = -1;
+
         type_prompt();
-        read_command(&command, parameters, buffer);
+        read_command(&command, parameters, buffer, &redirect_filename, &redirect_value);
 
         if (command == NULL)
         {
@@ -116,6 +166,9 @@ int main()
             else
             {
                 // Child process
+                if(redirect_value != -1){
+                    redirect_input_output(redirect_value, redirect_filename);
+                }
                 execvp(command, parameters); // Execute command
                 // If execvp returns, an error occurred
                 fprintf(stderr, "Error executing command '%s'\n", command);
