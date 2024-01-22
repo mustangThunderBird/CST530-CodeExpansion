@@ -11,8 +11,18 @@
 #define TRUE 1
 #define MAX_LENGTH 1024
 
-
-int is_background_job(char *command){
+int is_background_job(char *parameters[])
+{
+    int i = 0;
+    while (parameters[i] != NULL)
+    {
+        i++;
+    }
+    if (i > 0 && strcmp(parameters[i - 1], "&") == 0)
+    {
+        parameters[i - 1] = NULL; // Remove the '&' from parameters
+        return 1;
+    }
     return 0;
 }
 
@@ -177,12 +187,15 @@ int main()
         type_prompt();
         read_command(&command, parameters, buffer, &redirect_filename, &redirect_value);
 
+        // Check for background job and update parameters
+        int bg_job = is_background_job(parameters);
+
         if (command == NULL)
         {
             continue; // No command to process, start over
         }
 
-        // check if the command is a shell built in command
+        // Check if the command is a shell built-in command
         if (strcmp(command, "cd") == 0)
         {
             // Handling 'cd' command
@@ -198,8 +211,9 @@ int main()
                 fprintf(stderr, "Usage: cd <directory>\n");
             }
         }
-        else // not a shell built in command
+        else
         {
+            // Not a shell built-in command
             pid = fork();
             if (pid == 0)
             {
@@ -241,9 +255,13 @@ int main()
             else
             {
                 // Parent process
-                if (!is_background_job(command))
+                if (!bg_job)
                 {
                     waitpid(pid, &status, 0); // Wait for child to exit
+                }
+                else
+                {
+                    printf("Started background job %d\n", pid);
                 }
             }
         }
