@@ -28,8 +28,13 @@ int is_redirection(char *token){
     return is_redirect_char;
 }
 
-int is_pipe(char *command){
-    return 0;
+int is_pipe(char *token){
+    //check if token is pipe character
+    int character_is_pipe = -1;
+    if(strcmp(token, "|") == 0){
+        character_is_pipe = 1;
+    }
+    return character_is_pipe;
 }
 
 void type_prompt()
@@ -110,9 +115,50 @@ void redirect_input_output(int redirect_value, char *redirect_filename)
     }
 }
 
-void handle_pipe(char *command)
+void execute_command(char *command, char *parameters[])
 {
-    // Implementation for handling pipes
+    execvp(command, parameters);
+    // If execvp returns, an error occurred
+    fprintf(stderr, "Error executing command '%s'\n", command);
+    exit(EXIT_FAILURE);
+}
+
+void handle_pipe(char *first_command[], char *second_command[])
+{
+    int fds[2]; // file descriptors for the pipe
+    if (pipe(fds) == -1)
+    {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    pid_t pid = fork();
+    if (pid == -1)
+    {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    }
+
+    if (pid == 0)
+    {
+        // Child process
+        close(fds[0]);               // Close unused read end
+        dup2(fds[1], STDOUT_FILENO); // Connect stdout to write end of pipe
+        close(fds[1]);
+
+        execute_command(first_command[0], first_command);
+    }
+    else
+    {
+        // Parent process
+        close(fds[1]);              // Close unused write end
+        dup2(fds[0], STDIN_FILENO); // Connect stdin to read end of pipe
+        close(fds[0]);
+
+        waitpid(pid, NULL, 0); // Wait for child to finish
+
+        execute_command(second_command[0], second_command);
+    }
 }
 
 int main()
@@ -136,7 +182,7 @@ int main()
             continue; // No command to process, start over
         }
 
-        //check if the command is a shell built in command
+        // check if the command is a shell built in command
         if (strcmp(command, "cd") == 0)
         {
             // Handling 'cd' command
@@ -152,27 +198,53 @@ int main()
                 fprintf(stderr, "Usage: cd <directory>\n");
             }
         }
-        else //not a shell built in command
+        else // not a shell built in command
         {
             pid = fork();
-            if (pid != 0)
+            if (pid == 0)
+            {
+                // Child process
+                if (redirect_value != -1)
+                {
+                    redirect_input_output(redirect_value, redirect_filename);
+                }
+
+                // Check for pipe and split commands if necessary
+                char *first_command[MAX_LENGTH];
+                char *second_command[MAX_LENGTH];
+                int i = 0, j = 0, found_pipe = 0;
+                for (i = 0; parameters[i] != NULL; i++)
+                {
+                    if (strcmp(parameters[i], "|") == 0)
+                    {
+                        found_pipe = 1;
+                        first_command[i] = NULL;
+                        i++;
+                        break;
+                    }
+                    first_command[i] = parameters[i];
+                }
+                if (found_pipe)
+                {
+                    for (j = 0; parameters[i] != NULL; i++, j++)
+                    {
+                        second_command[j] = parameters[i];
+                    }
+                    second_command[j] = NULL;
+                    handle_pipe(first_command, second_command);
+                }
+                else
+                {
+                    execute_command(command, parameters);
+                }
+            }
+            else
             {
                 // Parent process
                 if (!is_background_job(command))
                 {
                     waitpid(pid, &status, 0); // Wait for child to exit
                 }
-            }
-            else
-            {
-                // Child process
-                if(redirect_value != -1){
-                    redirect_input_output(redirect_value, redirect_filename);
-                }
-                execvp(command, parameters); // Execute command
-                // If execvp returns, an error occurred
-                fprintf(stderr, "Error executing command '%s'\n", command);
-                exit(EXIT_FAILURE);
             }
         }
     }
